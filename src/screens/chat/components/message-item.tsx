@@ -125,6 +125,23 @@ type MessageItemProps = {
   expandAllToolSections?: boolean
 }
 
+function extractToolResultText(msg: GatewayMessage | undefined): string {
+  if (!msg) return ''
+  // Prefer text from content blocks (exec stdout, Read output, etc.)
+  if (Array.isArray(msg.content)) {
+    const text = msg.content
+      .filter((b: any) => b?.type === 'text' && b?.text)
+      .map((b: any) => b.text as string)
+      .join('\n')
+    if (text.trim()) return text
+  }
+  // Fallback to details serialized
+  if (msg.details && typeof msg.details === 'object') {
+    return JSON.stringify(msg.details, null, 2)
+  }
+  return ''
+}
+
 function mapToolCallToToolPart(
   toolCall: ToolCallContent,
   resultMessage: GatewayMessage | undefined,
@@ -141,17 +158,26 @@ function mapToolCallToToolPart(
     state = 'output-available'
   }
 
-  // Extract error text from result message content
+  // Extract error text — check content first, then top-level text
   let errorText: string | undefined
-  if (isError && resultMessage?.content?.[0]?.type === 'text') {
-    errorText = resultMessage.content[0].text || 'Unknown error'
+  if (isError) {
+    errorText = extractToolResultText(resultMessage) || 'Unknown error'
   }
+
+  // Build output: prefer structured details, fall back to content text
+  const outputText = extractToolResultText(resultMessage)
+  const output: Record<string, unknown> | undefined =
+    resultMessage?.details && Object.keys(resultMessage.details).length > 0
+      ? resultMessage.details
+      : outputText
+        ? { output: outputText }
+        : undefined
 
   return {
     type: toolCall.name || 'unknown',
     state,
     input: toolCall.arguments,
-    output: resultMessage?.details,
+    output,
     toolCallId: toolCall.id,
     errorText,
   }
@@ -262,6 +288,36 @@ function readExecNotification(message: GatewayMessage): ExecNotification | null 
   }
 }
 
+/** Extract the most useful single argument to display in a tool pill */
+function keyArgLabel(name: string, args?: Record<string, unknown>): string | null {
+  if (!args) return null
+  const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null)
+  switch (name) {
+    case 'exec':
+      return str(args.command)
+    case 'Read':
+      return str(args.file_path) ?? str(args.path)
+    case 'Write':
+    case 'Edit':
+      return str(args.file_path) ?? str(args.path) ?? str(args.old_string ? args.file_path : null)
+    case 'web_search':
+      return str(args.query)
+    case 'memory_search':
+      return str(args.query)
+    case 'memory_get':
+      return str(args.path)
+    case 'browser':
+      return str(args.url) ?? str(args.action)
+    case 'image':
+      return str(args.prompt)
+    default: {
+      // generic: first string value
+      const first = Object.values(args).find((v) => typeof v === 'string' && (v as string).trim())
+      return str(first)
+    }
+  }
+}
+
 function ToolCallPill({ toolCall }: { toolCall: StreamToolCall }) {
   const icons: Record<string, string> = {
     web_search: '🔍',
@@ -272,16 +328,20 @@ function ToolCallPill({ toolCall }: { toolCall: StreamToolCall }) {
     Write: '✏️',
     Edit: '✏️',
     browser: '🌐',
+    image: '🖼️',
   }
 
   const icon = icons[toolCall.name] ?? '🔧'
   const isDone = toolCall.phase === 'done'
   const isError = toolCall.phase === 'error'
+  const label = keyArgLabel(toolCall.name, toolCall.args as Record<string, unknown> | undefined)
+  // Truncate long paths/commands to keep pill readable
+  const truncated = label && label.length > 60 ? `${label.slice(0, 57)}…` : label
 
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium',
+        'inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-medium font-mono max-w-full',
         isDone
           ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400'
           : isError
@@ -289,9 +349,13 @@ function ToolCallPill({ toolCall }: { toolCall: StreamToolCall }) {
             : 'border-neutral-200 bg-neutral-50 text-neutral-600 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-400',
       )}
     >
-      {icon} {toolCall.name}
-      {isDone ? ' ✓' : null}
-      {isError ? ' ✗' : null}
+      <span className="shrink-0">{icon}</span>
+      <span className="shrink-0 not-italic">{toolCall.name}</span>
+      {truncated && (
+        <span className="opacity-60 truncate">{truncated}</span>
+      )}
+      {isDone && <span className="shrink-0 opacity-70">✓</span>}
+      {isError && <span className="shrink-0 opacity-70">✗</span>}
     </span>
   )
 }
@@ -575,10 +639,6 @@ function MessageItemComponent({
       return mapToolCallToToolPart(toolCall, resultMessage)
     })
   }, [toolCalls, toolResultsByCallId])
-  const hasToolErrors = useMemo(
-    () => toolParts.some((toolPart) => toolPart.state === 'output-error'),
-    [toolParts],
-  )
   const [toolCallsOpen, setToolCallsOpen] = useState(false)
   useEffect(() => {
     if (expandAllToolSections) {
@@ -883,41 +943,87 @@ function MessageItemComponent({
           </Message>
         )}
 
-      {/* Render tool calls — collapsible ▶ tool result style */}
+      {/* Render tool calls — one collapsible card per tool with input + output */}
       {hasToolCalls && (
-        <div className="w-full max-w-[900px] mt-2">
-          <Collapsible open={toolCallsOpen} onOpenChange={setToolCallsOpen}>
-            <CollapsibleTrigger className="w-full justify-start gap-1.5 bg-transparent hover:bg-primary-50 dark:hover:bg-primary-800/60 data-panel-open:bg-primary-50/60 px-2 py-1 rounded-md text-xs text-neutral-500 dark:text-neutral-400">
-              <span className="transition-transform duration-150 group-data-panel-open:rotate-90">▶</span>
-              <span className="font-mono">tool result</span>
-              {hasToolErrors && (
-                <span className="ml-1 text-red-400">⚠</span>
-              )}
-            </CollapsibleTrigger>
-            <CollapsiblePanel>
-              <div className="mt-1 flex flex-col gap-2">
-                {toolParts.map((toolPart, index) => {
-                  const resultText = typeof toolPart.output === 'string'
-                    ? toolPart.output
-                    : toolPart.output
-                      ? JSON.stringify(toolPart.output, null, 2)
-                      : ''
-                  return (
-                    <div key={toolPart.toolCallId || `${toolPart.type}-${index}`} className="flex flex-col gap-0.5">
-                      <span className="text-[10px] text-neutral-400 font-mono">{toolPart.type}</span>
-                      {resultText ? (
-                        <pre className="text-xs font-mono bg-neutral-900 dark:bg-neutral-950 text-neutral-200 rounded p-2 overflow-x-auto whitespace-pre-wrap break-words max-h-48">
-                          {resultText}
-                        </pre>
-                      ) : (
-                        <span className="text-xs text-neutral-400 italic">no output</span>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            </CollapsiblePanel>
-          </Collapsible>
+        <div className="w-full max-w-[900px] mt-1 flex flex-col gap-1">
+          {toolParts.map((toolPart, index) => {
+            const icons: Record<string, string> = {
+              exec: '⚡', Read: '📖', Write: '✏️', Edit: '✏️',
+              web_search: '🔍', memory_search: '🧠', memory_get: '🧠',
+              browser: '🌐', image: '🖼️',
+            }
+            const icon = icons[toolPart.type] ?? '🔧'
+            const isError = toolPart.state === 'output-error'
+
+            // Key arg for header (command, path, query…)
+            const headerArg = toolPart.input
+              ? keyArgLabel(toolPart.type, toolPart.input as Record<string, unknown>)
+              : null
+            const headerArgTruncated = headerArg && headerArg.length > 80
+              ? `${headerArg.slice(0, 77)}…`
+              : headerArg
+
+            // Output text — prefer structured 'output' key, then full stringify
+            const rawOutput = toolPart.output
+            let outputText = ''
+            if (rawOutput) {
+              if (typeof rawOutput.output === 'string') {
+                outputText = rawOutput.output
+              } else {
+                outputText = JSON.stringify(rawOutput, null, 2)
+              }
+            }
+
+            return (
+              <Collapsible
+                key={toolPart.toolCallId || `${toolPart.type}-${index}`}
+                open={toolCallsOpen}
+                onOpenChange={setToolCallsOpen}
+              >
+                <CollapsibleTrigger className={cn(
+                  'w-full justify-start gap-1.5 px-2 py-1.5 rounded-md text-[11px] font-mono',
+                  'bg-transparent hover:bg-primary-50 dark:hover:bg-primary-800/60',
+                  'data-panel-open:bg-primary-50/60 dark:data-panel-open:bg-primary-800/40',
+                  isError
+                    ? 'text-red-500 dark:text-red-400'
+                    : 'text-neutral-500 dark:text-neutral-400',
+                )}>
+                  <span className="transition-transform duration-150 group-data-panel-open:rotate-90 shrink-0">▶</span>
+                  <span className="shrink-0">{icon} {toolPart.type}</span>
+                  {headerArgTruncated && (
+                    <span className="opacity-50 truncate">{headerArgTruncated}</span>
+                  )}
+                  {isError && <span className="ml-auto shrink-0 text-red-400">✗ error</span>}
+                  {!isError && toolPart.state === 'output-available' && (
+                    <span className="ml-auto shrink-0 opacity-40">✓</span>
+                  )}
+                </CollapsibleTrigger>
+                <CollapsiblePanel>
+                  <div className="mt-0.5 ml-2 flex flex-col gap-1.5 pb-1">
+                    {/* Show full command/input for exec — not buried in collapsed */}
+                    {toolPart.type === 'exec' && headerArg && (
+                      <pre className="text-[11px] font-mono bg-neutral-800 dark:bg-neutral-950 text-amber-300 rounded px-2 py-1 overflow-x-auto whitespace-pre-wrap break-words">
+                        $ {headerArg}
+                      </pre>
+                    )}
+                    {isError && toolPart.errorText ? (
+                      <pre className="text-xs font-mono bg-red-950/40 text-red-300 rounded p-2 overflow-x-auto whitespace-pre-wrap break-words max-h-64">
+                        {toolPart.errorText}
+                      </pre>
+                    ) : outputText ? (
+                      <pre className="text-xs font-mono bg-neutral-900 dark:bg-neutral-950 text-neutral-200 rounded p-2 overflow-x-auto whitespace-pre-wrap break-words max-h-64">
+                        {outputText}
+                      </pre>
+                    ) : toolPart.state === 'input-available' ? (
+                      <span className="text-xs text-neutral-400 italic">running…</span>
+                    ) : (
+                      <span className="text-xs text-neutral-400 italic">no output</span>
+                    )}
+                  </div>
+                </CollapsiblePanel>
+              </Collapsible>
+            )
+          })}
         </div>
       )}
 
