@@ -135,6 +135,10 @@ type ChatMessageListProps = {
   activeToolCalls?: Array<{ id: string; name: string; phase: string }>
   liveToolActivity?: Array<{ name: string; timestamp: number }>
   hideSystemMessages?: boolean
+  /** True while the HTTP send request is in-flight (before waitingForResponse
+   *  can confirm the gateway received it). Keeps the thinking indicator visible
+   *  during the very first render after the user submits. */
+  sending?: boolean
 }
 
 function ChatMessageListComponent({
@@ -160,6 +164,7 @@ function ChatMessageListComponent({
   activeToolCalls = [],
   liveToolActivity = [],
   hideSystemMessages = false,
+  sending = false,
 }: ChatMessageListProps) {
   const anchorRef = useRef<HTMLDivElement | null>(null)
   const lastUserRef = useRef<HTMLDivElement | null>(null)
@@ -572,7 +577,9 @@ function ChatMessageListComponent({
   // blank-space flash between waitingForResponse clearing and the response
   // message actually rendering.
   const showTypingIndicator = (() => {
-    const effectivelyWaiting = waitingForResponse || thinkingGrace
+    // sending covers the instant the HTTP request fires before waitingForResponse
+    // is confirmed by the gateway (they're typically batched but this is belt+suspenders)
+    const effectivelyWaiting = waitingForResponse || thinkingGrace || sending
     if (!effectivelyWaiting) return false
     // If streaming has visible text, hide indicator
     if (isStreaming && streamingText && streamingText.length > 0) return false
@@ -1300,7 +1307,8 @@ function areChatMessageListEqual(
     prev.bottomOffset === next.bottomOffset &&
     prev.activeToolCalls === next.activeToolCalls &&
     prev.liveToolActivity === next.liveToolActivity &&
-    prev.hideSystemMessages === next.hideSystemMessages
+    prev.hideSystemMessages === next.hideSystemMessages &&
+    prev.sending === next.sending
   )
 }
 

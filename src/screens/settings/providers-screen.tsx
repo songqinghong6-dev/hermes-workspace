@@ -1,6 +1,11 @@
-import { Add01Icon, CheckmarkCircle02Icon } from '@hugeicons/core-free-icons'
+import {
+  Add01Icon,
+  CheckmarkCircle02Icon,
+  Delete02Icon,
+  Edit01Icon,
+} from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { fetchModels } from '@/lib/gateway-api'
@@ -13,6 +18,7 @@ import {
 import { cn } from '@/lib/utils'
 import { ProviderIcon } from './components/provider-icon'
 import { ProviderWizard } from './components/provider-wizard'
+import type { ProviderSummaryForEdit } from './components/provider-wizard'
 
 type ProviderStatus = 'active' | 'configured'
 
@@ -101,7 +107,11 @@ function ProviderStatusBadge({ status }: { status: ProviderStatus }) {
 }
 
 export function ProvidersScreen({ embedded = false }: ProvidersScreenProps) {
+  const queryClient = useQueryClient()
   const [wizardOpen, setWizardOpen] = useState(false)
+  const [editingProvider, setEditingProvider] =
+    useState<ProviderSummaryForEdit | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   const modelsQuery = useQuery({
     queryKey: ['gateway', 'providers', 'models'],
@@ -125,6 +135,52 @@ export function ProvidersScreen({ embedded = false }: ProvidersScreenProps) {
     },
     [modelsQuery.data?.configuredProviders, modelsQuery.data?.models],
   )
+
+  function handleEdit(provider: ProviderSummary) {
+    setEditingProvider({ id: provider.id, name: provider.name })
+    setWizardOpen(true)
+  }
+
+  async function handleDelete(provider: ProviderSummary) {
+    const confirmed = window.confirm(
+      `Remove provider "${provider.name}"? This will delete the API key from your local config.`,
+    )
+    if (!confirmed) return
+
+    setDeletingId(provider.id)
+    try {
+      const res = await fetch('/api/gateway-config', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          action: 'remove-provider',
+          provider: provider.id,
+        }),
+      })
+      const data = (await res.json()) as { ok: boolean; error?: string }
+      if (!data.ok) {
+        window.alert(
+          `Failed to remove provider: ${data.error ?? 'Unknown error'}`,
+        )
+      } else {
+        // Invalidate models cache so the list refreshes
+        await queryClient.invalidateQueries({
+          queryKey: ['gateway', 'providers', 'models'],
+        })
+      }
+    } catch {
+      window.alert('Network error — could not remove provider.')
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
+  function handleWizardOpenChange(open: boolean) {
+    setWizardOpen(open)
+    if (!open) {
+      setEditingProvider(null)
+    }
+  }
 
   return (
     <div
@@ -153,6 +209,7 @@ export function ProvidersScreen({ embedded = false }: ProvidersScreenProps) {
             <Button
               size="sm"
               onClick={function onOpenWizard() {
+                setEditingProvider(null)
                 setWizardOpen(true)
               }}
             >
@@ -217,6 +274,8 @@ export function ProvidersScreen({ embedded = false }: ProvidersScreenProps) {
           {providerSummaries.length > 0 ? (
             <div className="grid gap-3 md:grid-cols-2">
               {providerSummaries.map(function mapProvider(provider) {
+                const isDeleting = deletingId === provider.id
+
                 return (
                   <article
                     key={provider.id}
@@ -247,6 +306,43 @@ export function ProvidersScreen({ embedded = false }: ProvidersScreenProps) {
                         {provider.modelCount}
                       </span>
                     </div>
+
+                    <div className="mt-2 flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 gap-1.5"
+                        onClick={function onEdit() {
+                          handleEdit(provider)
+                        }}
+                        disabled={isDeleting}
+                        aria-label={`Edit ${provider.name}`}
+                      >
+                        <HugeiconsIcon
+                          icon={Edit01Icon}
+                          size={14}
+                          strokeWidth={1.5}
+                        />
+                        Edit
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 gap-1.5 border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300"
+                        onClick={function onDelete() {
+                          void handleDelete(provider)
+                        }}
+                        disabled={isDeleting}
+                        aria-label={`Delete ${provider.name}`}
+                      >
+                        <HugeiconsIcon
+                          icon={Delete02Icon}
+                          size={14}
+                          strokeWidth={1.5}
+                        />
+                        {isDeleting ? 'Removing…' : 'Delete'}
+                      </Button>
+                    </div>
                   </article>
                 )
               })}
@@ -255,7 +351,11 @@ export function ProvidersScreen({ embedded = false }: ProvidersScreenProps) {
         </section>
       </main>
 
-      <ProviderWizard open={wizardOpen} onOpenChange={setWizardOpen} />
+      <ProviderWizard
+        open={wizardOpen}
+        onOpenChange={handleWizardOpenChange}
+        editProvider={editingProvider}
+      />
     </div>
   )
 }

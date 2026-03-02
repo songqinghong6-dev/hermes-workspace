@@ -6,7 +6,7 @@ import {
   Tick02Icon,
 } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   OPENCLAW_CONFIG_PATH,
   PROVIDER_CATALOG,
@@ -29,10 +29,18 @@ import { ProviderIcon } from './provider-icon'
 type WizardStep = 'provider' | 'auth' | 'instructions' | 'verify'
 type CopyState = 'idle' | 'copied' | 'failed'
 type SaveState = 'idle' | 'saving' | 'saved' | 'error'
+type VerifyState = 'checking' | 'success' | 'warning'
 
 type ProviderWizardProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** Pre-fill with an existing provider for editing */
+  editProvider?: ProviderSummaryForEdit | null
+}
+
+export type ProviderSummaryForEdit = {
+  id: string
+  name: string
 }
 
 type StepItem = {
@@ -94,7 +102,44 @@ function getStepIndex(step: WizardStep): number {
   })
 }
 
-export function ProviderWizard({ open, onOpenChange }: ProviderWizardProps) {
+/**
+ * Poll GET /api/models for up to `timeoutMs` (default 10 s).
+ * Resolves true if the given providerId appears in the response, false on timeout.
+ */
+async function pollForProvider(
+  providerId: string,
+  timeoutMs = 10_000,
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs
+  const interval = 1_500
+
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch('/api/models')
+      if (res.ok) {
+        const data = (await res.json()) as {
+          configuredProviders?: Array<string>
+        }
+        const configured = Array.isArray(data.configuredProviders)
+          ? data.configuredProviders
+          : []
+        if (configured.some((p) => p.toLowerCase() === providerId.toLowerCase())) {
+          return true
+        }
+      }
+    } catch {
+      // network blip — keep polling
+    }
+
+    const remaining = deadline - Date.now()
+    if (remaining <= 0) break
+    await new Promise((r) => globalThis.setTimeout(r, Math.min(interval, remaining)))
+  }
+
+  return false
+}
+
+export function ProviderWizard({ open, onOpenChange, editProvider }: ProviderWizardProps) {
   const { triggerRestart } = useGatewayRestart()
 
   const [step, setStep] = useState<WizardStep>('provider')
@@ -109,6 +154,8 @@ export function ProviderWizard({ open, onOpenChange }: ProviderWizardProps) {
   const [apiKeyInput, setApiKeyInput] = useState('')
   const [showManualSnippet, setShowManualSnippet] = useState(false)
   const [verificationMessage, setVerificationMessage] = useState('')
+  const [verifyState, setVerifyState] = useState<VerifyState>('checking')
+  const pollingRef = useRef(false)
 
   const currentStepIndex = getStepIndex(step)
   const selectedProvider = selectedProviderId
@@ -118,6 +165,15 @@ export function ProviderWizard({ open, onOpenChange }: ProviderWizardProps) {
     selectedProvider && selectedAuthType
       ? buildConfigExample(selectedProvider, selectedAuthType)
       : ''
+
+  // When opened with editProvider, jump straight to auth step
+  useEffect(() => {
+    if (open && editProvider) {
+      setSelectedProviderId(editProvider.id)
+      setSelectedAuthType(null)
+      setStep('auth')
+    }
+  }, [open, editProvider])
 
   function resetState() {
     setStep('provider')
@@ -129,6 +185,8 @@ export function ProviderWizard({ open, onOpenChange }: ProviderWizardProps) {
     setApiKeyInput('')
     setShowManualSnippet(false)
     setVerificationMessage('')
+    setVerifyState('checking')
+    pollingRef.current = false
   }
 
   function handleDialogOpenChange(nextOpen: boolean) {
@@ -143,6 +201,7 @@ export function ProviderWizard({ open, onOpenChange }: ProviderWizardProps) {
     setSelectedAuthType(null)
     setCopyState('idle')
     setVerificationMessage('')
+    setVerifyState('checking')
     setStep('auth')
   }
 
@@ -150,6 +209,7 @@ export function ProviderWizard({ open, onOpenChange }: ProviderWizardProps) {
     setSelectedAuthType(authType)
     setCopyState('idle')
     setVerificationMessage('')
+    setVerifyState('checking')
     setStep('instructions')
   }
 
@@ -183,6 +243,7 @@ export function ProviderWizard({ open, onOpenChange }: ProviderWizardProps) {
     }
 
     const providerName = selectedProvider.name
+    const providerId = selectedProvider.id
     const patchBody = JSON.stringify({
       raw: JSON.stringify(patch, null, 2),
       reason: `Studio: add ${providerName} API key`,
@@ -203,35 +264,65 @@ export function ProviderWizard({ open, onOpenChange }: ProviderWizardProps) {
     }
 
     try {
-      // Mark as saved, close wizard, then trigger the confirm → save → restart flow
+      // Move to verify step, then trigger the restart flow
       setSaveState('saved')
-      setVerificationMessage(
-        `${providerName} API key saved. Gateway is restarting to apply changes.`,
-      )
+      setVerifyState('checking')
+      setVerificationMessage(`${providerName} API key saved. Gateway is restarting…`)
       setStep('verify')
-      onOpenChange(false)
-      resetState()
 
       // Shows confirm dialog: user can click "Restart & Apply" or "Cancel"
       await triggerRestart(saveConfigAndRestart)
+
+      // After restart, poll /api/models to confirm provider is visible
+      if (!pollingRef.current) {
+        pollingRef.current = true
+        setVerificationMessage(`Checking if ${providerName} models are available…`)
+
+        const found = await pollForProvider(providerId)
+
+        if (found) {
+          setVerifyState('success')
+          setVerificationMessage(`${providerName} is connected and models are available.`)
+        } else {
+          setVerifyState('warning')
+          setVerificationMessage(
+            `Gateway restarted, but ${providerName} models haven't appeared yet. ` +
+              `Check your API key or wait a moment and refresh.`,
+          )
+        }
+        pollingRef.current = false
+      }
     } catch (err) {
       setSaveState('error')
       setSaveError(err instanceof Error ? err.message : 'Network error')
     }
   }
 
-  // Keep for potential future use with manual config verification
-  void function _handleStartVerification() {
-    setVerificationMessage(
-      'Verification not yet implemented — restart Gateway to apply changes.',
-    )
-    setStep('verify')
-  }
-
   function handleDone() {
     onOpenChange(false)
     resetState()
   }
+
+  const verifyIconColor =
+    verifyState === 'success'
+      ? 'text-green-600'
+      : verifyState === 'warning'
+        ? 'text-amber-600'
+        : 'text-primary-600'
+
+  const verifyBorderColor =
+    verifyState === 'success'
+      ? 'border-green-200 bg-green-50/60'
+      : verifyState === 'warning'
+        ? 'border-amber-200 bg-amber-50/60'
+        : 'border-primary-200 bg-primary-100/70'
+
+  const verifyTitle =
+    verifyState === 'success'
+      ? 'Connection Verified ✓'
+      : verifyState === 'warning'
+        ? 'Connected (models pending)'
+        : 'Checking connection…'
 
   return (
     <DialogRoot open={open} onOpenChange={handleDialogOpenChange}>
@@ -241,7 +332,7 @@ export function ProviderWizard({ open, onOpenChange }: ProviderWizardProps) {
             <div className="flex items-start justify-between gap-4">
               <div className="space-y-1">
                 <DialogTitle className="text-balance">
-                  Provider Setup Wizard
+                  {editProvider ? `Edit Provider: ${editProvider.name}` : 'Provider Setup Wizard'}
                 </DialogTitle>
                 <DialogDescription className="text-pretty">
                   Add provider credentials safely. API keys stay local in your
@@ -421,7 +512,12 @@ export function ProviderWizard({ open, onOpenChange }: ProviderWizardProps) {
                     variant="outline"
                     size="sm"
                     onClick={function onBack() {
-                      setStep('provider')
+                      // If editing, close wizard instead of going back to provider picker
+                      if (editProvider) {
+                        handleDialogOpenChange(false)
+                      } else {
+                        setStep('provider')
+                      }
                     }}
                   >
                     <HugeiconsIcon
@@ -456,12 +552,12 @@ export function ProviderWizard({ open, onOpenChange }: ProviderWizardProps) {
                       <Button
                         size="sm"
                         onClick={function onLaunchOAuth() {
-                          // Open the terminal route and trigger the command
                           window.open('/terminal', '_blank')
                           setVerificationMessage(
                             'Run "openclaw configure" in the terminal and select Google OAuth when prompted. ' +
                               'A browser window will open for sign-in. Once complete, the gateway will restart automatically.',
                           )
+                          setVerifyState('warning')
                           setStep('verify')
                         }}
                       >
@@ -479,6 +575,21 @@ export function ProviderWizard({ open, onOpenChange }: ProviderWizardProps) {
                           Select <strong>Google Antigravity</strong> →{' '}
                           <strong>OAuth</strong>. A browser tab will open for
                           Google sign-in.
+                        </p>
+                      </div>
+
+                      <div className="rounded-xl border border-primary-200 bg-primary-100/70 px-3 py-2">
+                        <p className="text-xs text-primary-700 text-pretty">
+                          No terminal access?{' '}
+                          <a
+                            href="https://docs.openclaw.ai"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-primary-800 underline decoration-primary-400 hover:text-primary-900"
+                          >
+                            See the OpenClaw docs
+                          </a>{' '}
+                          for setup instructions.
                         </p>
                       </div>
                     </div>
@@ -500,6 +611,7 @@ export function ProviderWizard({ open, onOpenChange }: ProviderWizardProps) {
                             'Run "openclaw configure" in the terminal and select Anthropic → CLI Token. ' +
                               'It will detect your Claude CLI credentials and import them automatically.',
                           )
+                          setVerifyState('warning')
                           setStep('verify')
                         }}
                       >
@@ -527,6 +639,21 @@ export function ProviderWizard({ open, onOpenChange }: ProviderWizardProps) {
                           must be installed and authenticated first. Run{' '}
                           <code className="font-mono">claude</code> in terminal
                           to verify.
+                        </p>
+                      </div>
+
+                      <div className="rounded-xl border border-primary-200 bg-primary-100/70 px-3 py-2">
+                        <p className="text-xs text-primary-700 text-pretty">
+                          No terminal access?{' '}
+                          <a
+                            href="https://docs.openclaw.ai"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-primary-800 underline decoration-primary-400 hover:text-primary-900"
+                          >
+                            See the OpenClaw docs
+                          </a>{' '}
+                          for CLI token setup instructions.
                         </p>
                       </div>
                     </div>
@@ -697,15 +824,15 @@ export function ProviderWizard({ open, onOpenChange }: ProviderWizardProps) {
             {step === 'verify' ? (
               <section className="mt-5">
                 <h3 className="text-base font-medium text-primary-900 text-balance">
-                  Step 4: Verify (Stub)
+                  Step 4: Verify
                 </h3>
-                <div className="mt-3 rounded-2xl border border-primary-200 bg-primary-100/70 p-4">
-                  <p className="text-sm font-medium text-primary-900 text-balance">
-                    Checking connection...
+                <div className={cn('mt-3 rounded-2xl border p-4', verifyBorderColor)}>
+                  <p className={cn('text-sm font-medium text-balance', verifyIconColor)}>
+                    {verifyTitle}
                   </p>
                   <p className="mt-1 text-sm text-primary-600 text-pretty">
                     {verificationMessage ||
-                      'Verification not yet implemented — restart Gateway to apply changes.'}
+                      'Waiting for gateway to respond…'}
                   </p>
                 </div>
 

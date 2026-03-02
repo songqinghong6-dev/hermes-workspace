@@ -1847,6 +1847,7 @@ export function ChatScreen({
               hideSystemMessages={isMobile}
               activeToolCalls={activeToolCalls}
               liveToolActivity={liveToolActivity}
+              sending={sending}
             />
           )}
           {showComposer ? (
