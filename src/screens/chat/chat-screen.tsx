@@ -1046,6 +1046,190 @@ export function ChatScreen({
     setWaitingForResponse(false)
   }, [activeFriendlyId, isNewChat, streamStop])
 
+  /**
+   * Simplified sendMessage - fire and forget.
+   * Response arrives via SSE stream, not via this function.
+   */
+  const sendMessage = useCallback(
+    function sendMessage(
+      sessionKey: string,
+      friendlyId: string,
+      body: string,
+      attachments: Array<GatewayAttachment> = [],
+      skipOptimistic = false,
+      existingClientId = '',
+    ) {
+      setLocalActivity('reading')
+      const normalizedAttachments = attachments.map((attachment) => ({
+        ...attachment,
+        id: attachment.id ?? crypto.randomUUID(),
+      }))
+
+    // Inject text/file attachment content directly into the message body.
+    // Gateways reliably forward text in the message body; file attachments
+    // may be silently dropped for non-image types.
+      const textBlocks = normalizedAttachments
+        .filter((a) => {
+          const mime =
+            normalizeMimeType(a.contentType ?? '') ||
+            readDataUrlMimeType(a.dataUrl ?? '')
+          return !isImageMimeType(mime) && (a.dataUrl ?? '').length > 0
+        })
+        .map((a) => {
+          const raw = a.dataUrl ?? ''
+          const content = raw.startsWith('data:')
+            ? atob(raw.split(',')[1] ?? '')
+            : raw
+          return `\n\n<attachment name="${a.name ?? 'file'}">\n${content}\n</attachment>`
+        })
+      const enrichedBody = body + textBlocks.join('')
+
+      let optimisticClientId = existingClientId
+      if (!skipOptimistic) {
+        const { clientId, optimisticMessage } = createOptimisticMessage(
+          body,
+          normalizedAttachments,
+        )
+        optimisticClientId = clientId
+        appendHistoryMessage(
+          queryClient,
+          friendlyId,
+          sessionKey,
+          optimisticMessage,
+        )
+        updateSessionLastMessage(
+          queryClient,
+          sessionKey,
+          friendlyId,
+          optimisticMessage,
+        )
+      }
+
+      setPendingGeneration(true)
+      setSending(true)
+      setError(null)
+      setWaitingForResponse(true)
+
+      // Failsafe: clear waitingForResponse after 120s no matter what
+      // Prevents infinite spinner if SSE/idle detection both fail
+      if (failsafeTimerRef.current) {
+        window.clearTimeout(failsafeTimerRef.current)
+      }
+      failsafeTimerRef.current = window.setTimeout(() => {
+        streamFinish()
+      }, 120_000)
+
+      // Send a compatibility shape for gateway attachment parsing.
+      // Different gateway/channel versions read different keys.
+      const payloadAttachments = normalizedAttachments.map((attachment) => {
+        const mimeType =
+          normalizeMimeType(attachment.contentType) ||
+          readDataUrlMimeType(attachment.dataUrl)
+        const isImage = isImageMimeType(mimeType)
+        // For text/file attachments, dataUrl holds raw text (not a base64 data URL).
+        // We must base64-encode it so the server can build a valid data: URI.
+        const rawDataUrl = attachment.dataUrl ?? ''
+        let encodedContent: string
+        let finalDataUrl: string
+        if (!isImage && !rawDataUrl.startsWith('data:')) {
+          encodedContent = btoa(unescape(encodeURIComponent(rawDataUrl)))
+          finalDataUrl = mimeType
+            ? `data:${mimeType};base64,${encodedContent}`
+            : `data:text/plain;base64,${encodedContent}`
+        } else {
+          encodedContent = stripDataUrlPrefix(rawDataUrl)
+          finalDataUrl = rawDataUrl
+        }
+        return {
+          id: attachment.id,
+          name: attachment.name,
+          fileName: attachment.name,
+          contentType: mimeType || undefined,
+          mimeType: mimeType || undefined,
+          mediaType: mimeType || undefined,
+          type: isImage ? 'image' : 'file',
+          content: encodedContent,
+          data: encodedContent,
+          base64: encodedContent,
+          dataUrl: finalDataUrl,
+          size: attachment.size,
+        }
+      })
+
+      fetch('/api/send', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          sessionKey,
+          friendlyId,
+          message: enrichedBody,
+          attachments:
+            payloadAttachments.length > 0 ? payloadAttachments : undefined,
+          thinking: 'low',
+          idempotencyKey: optimisticClientId || crypto.randomUUID(),
+          clientId: optimisticClientId || undefined,
+        }),
+      })
+        .then(async (res) => {
+          if (!res.ok) {
+            let errorText = `HTTP ${res.status}`
+            try {
+              errorText = await readError(res)
+            } catch {
+              /* ignore parse errors */
+            }
+            throw new Error(errorText)
+          }
+          // Stream setup is separate — don't let it trigger send failure
+          try {
+            streamStart()
+          } catch (e) {
+            if (import.meta.env.DEV)
+              console.warn('[chat] streamStart error (non-fatal):', e)
+          }
+          if (failsafeTimerRef.current) {
+            window.clearTimeout(failsafeTimerRef.current)
+            failsafeTimerRef.current = null
+          }
+          setSending(false)
+        })
+        .catch((err: unknown) => {
+          if (failsafeTimerRef.current) {
+            window.clearTimeout(failsafeTimerRef.current)
+            failsafeTimerRef.current = null
+          }
+          setSending(false)
+          const messageText = err instanceof Error ? err.message : String(err)
+          if (isMissingGatewayAuth(messageText)) {
+            try {
+              navigate({ to: '/connect', replace: true })
+            } catch {
+              /* router not ready */
+            }
+            return
+          }
+          // Only mark as failed for actual network/API errors
+          if (optimisticClientId) {
+            updateHistoryMessageByClientId(
+              queryClient,
+              friendlyId,
+              sessionKey,
+              optimisticClientId,
+              function markFailed(message) {
+                return { ...message, status: 'error' }
+              },
+            )
+          }
+          const errorMessage = `Failed to send message. ${messageText}`
+          setError(errorMessage)
+          toast('Failed to send message', { type: 'error' })
+          setPendingGeneration(false)
+          setWaitingForResponse(false)
+        })
+    },
+    [navigate, queryClient, setLocalActivity, streamFinish, streamStart],
+  )
+
   useLayoutEffect(() => {
     if (isNewChat) return
     const pending = consumePendingSend(
@@ -1100,184 +1284,8 @@ export function ChatScreen({
     isNewChat,
     queryClient,
     resolvedSessionKey,
+    sendMessage,
   ])
-
-  /**
-   * Simplified sendMessage - fire and forget.
-   * Response arrives via SSE stream, not via this function.
-   */
-  function sendMessage(
-    sessionKey: string,
-    friendlyId: string,
-    body: string,
-    attachments: Array<GatewayAttachment> = [],
-    skipOptimistic = false,
-    existingClientId = '',
-  ) {
-    setLocalActivity('reading')
-    const normalizedAttachments = attachments.map((attachment) => ({
-      ...attachment,
-      id: attachment.id ?? crypto.randomUUID(),
-    }))
-
-    // Inject text/file attachment content directly into the message body.
-    // Gateways reliably forward text in the message body; file attachments
-    // may be silently dropped for non-image types.
-    const textBlocks = normalizedAttachments
-      .filter((a) => {
-        const mime = normalizeMimeType(a.contentType ?? '') || readDataUrlMimeType(a.dataUrl ?? '')
-        return !isImageMimeType(mime) && (a.dataUrl ?? '').length > 0
-      })
-      .map((a) => {
-        const raw = a.dataUrl ?? ''
-        const content = raw.startsWith('data:') ? atob(raw.split(',')[1] ?? '') : raw
-        return `\n\n<attachment name="${a.name ?? 'file'}">\n${content}\n</attachment>`
-      })
-    const enrichedBody = body + textBlocks.join('')
-
-    let optimisticClientId = existingClientId
-    if (!skipOptimistic) {
-      const { clientId, optimisticMessage } = createOptimisticMessage(
-        body,
-        normalizedAttachments,
-      )
-      optimisticClientId = clientId
-      appendHistoryMessage(
-        queryClient,
-        friendlyId,
-        sessionKey,
-        optimisticMessage,
-      )
-      updateSessionLastMessage(
-        queryClient,
-        sessionKey,
-        friendlyId,
-        optimisticMessage,
-      )
-    }
-
-    setPendingGeneration(true)
-    setSending(true)
-    setError(null)
-    setWaitingForResponse(true)
-
-    // Failsafe: clear waitingForResponse after 120s no matter what
-    // Prevents infinite spinner if SSE/idle detection both fail
-    if (failsafeTimerRef.current) {
-      window.clearTimeout(failsafeTimerRef.current)
-    }
-    failsafeTimerRef.current = window.setTimeout(() => {
-      streamFinish()
-    }, 120_000)
-
-    // Send a compatibility shape for gateway attachment parsing.
-    // Different gateway/channel versions read different keys.
-    const payloadAttachments = normalizedAttachments.map((attachment) => {
-      const mimeType =
-        normalizeMimeType(attachment.contentType) ||
-        readDataUrlMimeType(attachment.dataUrl)
-      const isImage = isImageMimeType(mimeType)
-      // For text/file attachments, dataUrl holds raw text (not a base64 data URL).
-      // We must base64-encode it so the server can build a valid data: URI.
-      const rawDataUrl = attachment.dataUrl ?? ''
-      let encodedContent: string
-      let finalDataUrl: string
-      if (!isImage && !rawDataUrl.startsWith('data:')) {
-        encodedContent = btoa(unescape(encodeURIComponent(rawDataUrl)))
-        finalDataUrl = mimeType
-          ? `data:${mimeType};base64,${encodedContent}`
-          : `data:text/plain;base64,${encodedContent}`
-      } else {
-        encodedContent = stripDataUrlPrefix(rawDataUrl)
-        finalDataUrl = rawDataUrl
-      }
-      return {
-        id: attachment.id,
-        name: attachment.name,
-        fileName: attachment.name,
-        contentType: mimeType || undefined,
-        mimeType: mimeType || undefined,
-        mediaType: mimeType || undefined,
-        type: isImage ? 'image' : 'file',
-        content: encodedContent,
-        data: encodedContent,
-        base64: encodedContent,
-        dataUrl: finalDataUrl,
-        size: attachment.size,
-      }
-    })
-
-    fetch('/api/send', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        sessionKey,
-        friendlyId,
-        message: enrichedBody,
-        attachments:
-          payloadAttachments.length > 0 ? payloadAttachments : undefined,
-        thinking: 'low',
-        idempotencyKey: optimisticClientId || crypto.randomUUID(),
-        clientId: optimisticClientId || undefined,
-      }),
-    })
-      .then(async (res) => {
-        if (!res.ok) {
-          let errorText = `HTTP ${res.status}`
-          try {
-            errorText = await readError(res)
-          } catch {
-            /* ignore parse errors */
-          }
-          throw new Error(errorText)
-        }
-        // Stream setup is separate — don't let it trigger send failure
-        try {
-          streamStart()
-        } catch (e) {
-          if (import.meta.env.DEV)
-            console.warn('[chat] streamStart error (non-fatal):', e)
-        }
-        if (failsafeTimerRef.current) {
-          window.clearTimeout(failsafeTimerRef.current)
-          failsafeTimerRef.current = null
-        }
-        setSending(false)
-      })
-      .catch((err: unknown) => {
-        if (failsafeTimerRef.current) {
-          window.clearTimeout(failsafeTimerRef.current)
-          failsafeTimerRef.current = null
-        }
-        setSending(false)
-        const messageText = err instanceof Error ? err.message : String(err)
-        if (isMissingGatewayAuth(messageText)) {
-          try {
-            navigate({ to: '/connect', replace: true })
-          } catch {
-            /* router not ready */
-          }
-          return
-        }
-        // Only mark as failed for actual network/API errors
-        if (optimisticClientId) {
-          updateHistoryMessageByClientId(
-            queryClient,
-            friendlyId,
-            sessionKey,
-            optimisticClientId,
-            function markFailed(message) {
-              return { ...message, status: 'error' }
-            },
-          )
-        }
-        const errorMessage = `Failed to send message. ${messageText}`
-        setError(errorMessage)
-        toast('Failed to send message', { type: 'error' })
-        setPendingGeneration(false)
-        setWaitingForResponse(false)
-      })
-  }
 
   const retryQueuedMessage = useCallback(
     function retryQueuedMessage(message: GatewayMessage, mode: 'manual' | 'auto') {
@@ -1330,6 +1338,7 @@ export function ChatScreen({
       queryClient,
       resolvedSessionKey,
       sessionKeyForHistory,
+      sendMessage,
     ],
   )
 
@@ -1579,6 +1588,7 @@ export function ChatScreen({
       navigate,
       onSessionResolved,
       scrollChatToBottom,
+      sendMessage,
       upsertSessionInCache,
       queryClient,
       resolvedSessionKey,

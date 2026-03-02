@@ -167,9 +167,8 @@ export function useRealtimeChatHistory({
     ),
     onDone: useCallback(
       (_state: string, eventSessionKey: string) => {
-        const currentState = useGatewayChatStore
-          .getState()
-          .streamingState.get(eventSessionKey)
+        const currentState =
+          eventSessionKey === sessionKey ? streamingStateRef.current : null
         if (currentState?.text) {
           completedStreamingTextRef.current = currentState.text
         }
