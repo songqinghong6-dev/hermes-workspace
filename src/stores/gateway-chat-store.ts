@@ -412,10 +412,18 @@ export const useGatewayChatStore = create<GatewayChatState>((set, get) => ({
           // Strip <final>…</final> sentinel tags: the `done` message may still carry
           // them if the gateway serialises the final state from its streaming buffer.
           const cleanedMessage = stripFinalTagsFromMessage(event.message)
+          // Preserve tool calls from streaming state on the final message so
+          // ToolCallPill can render them even after streaming state is cleared.
+          // Fast tool runs clear streaming state before React renders — embedding
+          // __streamToolCalls ensures pills survive in the history message.
+          const streamToolCallsToEmbed = streaming?.toolCalls?.length
+            ? streaming.toolCalls
+            : undefined
           completeMessage = {
             ...cleanedMessage,
             timestamp: now,
             __streamingStatus: 'complete' as any,
+            ...(streamToolCallsToEmbed ? { __streamToolCalls: streamToolCallsToEmbed } : {}),
           }
         } else if (streaming && streaming.text) {
           // Fallback: build from streaming state if no final payload.
@@ -496,9 +504,29 @@ export const useGatewayChatStore = create<GatewayChatState>((set, get) => ({
           }
         }
 
-        // Clear streaming state
+        // Clear streaming state after a brief grace period so fast tool runs
+        // (< one render frame) still paint their pills before being wiped.
+        // 1500ms matches the thinking indicator grace period.
         streamingMap.delete(sessionKey)
         set({ streamingState: streamingMap, lastEventAt: now })
+
+        if (streaming?.toolCalls?.length) {
+          // Keep a stub in streaming state for 1.5s so pills stay visible
+          const stub = new Map(get().streamingState)
+          stub.set(sessionKey, {
+            ...streaming,
+            text: '',
+            thinking: '',
+            toolCalls: streaming.toolCalls.map((tc) => ({ ...tc, phase: 'done' as const })),
+            runId: streaming.runId,
+          })
+          set({ streamingState: stub })
+          setTimeout(() => {
+            const current = new Map(get().streamingState)
+            current.delete(sessionKey)
+            set({ streamingState: current })
+          }, 1500)
+        }
         break
       }
     }
