@@ -8,7 +8,7 @@
   "type": "module",
   "scripts": {
     "dev": "NODE_OPTIONS=\"--max-old-space-size=2048\" vite dev --port 3000",
-    "build": "vite build",
+    "build": "NITRO_PRESET=vercel vite build",
     "start": "NODE_OPTIONS=\"--max-old-space-size=2048\" node .output/server/index.mjs",
     "start:dev": "NODE_OPTIONS=\"--max-old-space-size=2048\" vite dev --port 3000",
     "preview": "vite preview",
