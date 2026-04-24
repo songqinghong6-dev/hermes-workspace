@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hermes Skill Nebula</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=Noto+Sans+SC:wght@300;400;700&display=swap" rel="stylesheet">
+    <style>
+        body { background-color: #0d0e17; color: #e2e8f0; font-family: 'Inter', 'Noto Sans SC', sans-serif; overflow-x: hidden; }
+        .glass { background: rgba(255, 255, 255, 0.03); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .glass:hover { background: rgba(255, 255, 255, 0.07); border: 1px solid rgba(0, 242, 255, 0.5); transform: translateY(-5px); box-shadow: 0 10px 30px -10px rgba(0, 242, 255, 0.3); }
+        .neon-text { color: #00f2ff; text-shadow: 0 0 10px rgba(0, 242, 255, 0.5); }
+        .category-title { font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(255, 255, 255, 0.5); font-size: 0.75rem; margin-bottom: 1rem; }
+        .bento-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; }
+        .nebula-bg { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: radial-gradient(circle at 50% 50%, #1a1c2c 0%, #0d0e17 100%); z-index: -1; }
+        .glow { position: absolute; width: 300px; height: 300px; background: radial-gradient(circle, rgba(0, 242, 255, 0.1) 0%, transparent 70%); border-radius: 50%; filter: blur(40px); z-index: -1; }
+    </style>
+</head>
+<body class="p-8 md:p-16">
+    <div class="nebula-bg"></div>
+    <div class="glow" style="top: 10%; left: 10%;"></div>
+    <div class="glow" style="bottom: 10%; right: 10%;"></div>
+    <header class="max-w-6xl mx-auto mb-16 text-center">
+        <h1 class="text-5xl md:text-7xl font-extrabold mb-4 tracking-tighter">HERMES <span class="neon-text">SKILL NEBULA</span></h1>
+        <p class="text-slate-400 text-lg font-light max-w-2xl mx-auto">全维度能力矩阵分析报告 · 152 项工业级技能集</p>
+    </header>
+    <main class="max-w-7xl mx-auto space-y-20">
+
+    <section>
+        <div class="category-title flex items-center gap-2">
+            <span>🧠</span>
+            <span>Core Evolution</span>
+        </div>
+        <div class="bento-grid">
+            
+        <div class="glass p-6 rounded-2xl group">
+            <div class="flex items-center gap-3 mb-3">
+                <div class="w-2 h-2 rounded-full" style="background-color: #00f2ff"></div>
+                <h3 class="font-bold text-slate-200 group-hover:text-white transition-colors">openspace</h3>
+            </div>
+            <p class="text-slate-400 text-sm leading-relaxed font-light">技能进化引擎 - 升级、下载、补丁优化</p>
+        </div>
+        
+        <div class="glass p-6 rounded-2xl group">
+            <div class="flex items-center gap-3 mb-3">
+                <div class="w-2 h-2 rounded-full" style="background-color: #00f2ff"></div>
+                <h3 class="font-bold text-slate-200 group-hover:text-white transition-colors">skill-vetter</h3>
+            </div>
+            <p class="text-slate-400 text-sm leading-relaxed font-light">安全卫士 - 安装前的安全审计与风险定级</p>
+        </div>
+        
+        <div class="glass p-6 rounded-2xl group">
+            <div class="flex items-center gap-3 mb-3">
+                <div class="w-2 h-2 rounded-full" style="background-color: #00f2ff"></div>
+                <h3 class="font-bold text-slate-200 group-hover:text-white transition-colors">ai-tuning-framework</h3>
+            </div>
+            <p class="text-slate-400 text-sm leading-relaxed font-light">重构认知 + 赋予人格的调教框架</p>
+        </div>
+        
+        <div class="glass p-6 rounded-2xl group">
+            <div class="flex items-center gap-3 mb-3">
+                <div class="w-2 h-2 rounded-full" style="background-color: #00f2ff"></div>
+                <h3 class="font-bold text-slate-200 group-hover:text-white transition-colors">hermes-agent</h3>
+            </div>
+            <p class="text-slate-400 text-sm leading-relaxed font-light">Agent 核心指令集与配置指南</p>
+        </div>
+        
+        </div>
+    </section>
+    
+    <section>
+        <div class="category-title flex items-center gap-2">
+            <span>🛠️</span>
+            <span>Engineering & DevOps</span>
+        </div>
+        <div class="bento-grid">
+            
+        <div class="glass p-6 rounded-2xl group">
+            <div class="flex items-center gap-3 mb-3">
+                <div class="w-2 h-2 rounded-full" style="background-color: #ffd700"></div>
+                <h3 class="font-bold text-slate-200 group-hover:text-white transition-colors">karpathy-coding</h3>
+            </div>
+            <p class="text-slate-400 text-sm leading-relaxed font-light">目标导向/TDD/Vibe Coding 编程哲学</p>
+        </div>
+        
+        <div class="glass p-6 rounded-2xl group">
+            <div class="flex items-center gap-3 mb-3">
+                <div class="w-2 h-2 rounded-full" style="background-color: #ffd700"></div>
+                <h3 class="font-bold text-slate-200 group-hover:text-white transition-colors">superpowers-orchestrator</h3>
+            </div>
+            <p class="text-slate-400 text-sm leading-relaxed font-light">7阶段结构化工作流，确保交付质量</p>
+        </div>
+        
+        <div class="glass p-6 rounded-2xl group">
+            <div class="flex items-center gap-3 mb-3">
+                <div class="w-2 h-2 rounded-full" style="background-color: #ffd700"></div>
+                <h3 class="font-bold text-slate-200 group-hover:text-white transition-colors">api-key-pool-manager</h3>
+            </div>
+            <p class="text-slate-400 text-sm leading-relaxed font-light">多Key轮询与故障转移，消除 429 限制</p>
+        </div>
+        
+        <div class="glass p-6 rounded-2xl group">
+            <div class="flex items-center gap-3 mb-3">
+                <div class="w-2 h-2 rounded-full" style="background-color: #ffd700"></div>
+                <h3 class="font-bold text-slate-200 group-hover:text-white transition-colors">github-repo-management</h3>
+            </div>
+            <p class="text-slate-400 text-sm leading-relaxed font-light">全生命周期仓库管理与同步</p>
+        </div>
+        
+        <div class="glass p-6 rounded-2xl group">
+            <div class="flex items-center gap-3 mb-3">
+                <div class="w-2 h-2 rounded-full" style="background-color: #ffd700"></div>
+                <h3 class="font-bold text-slate-200 group-hover:text-white transition-colors">vercel-spa-fix</h3>
+            </div>
+            <p class="text-slate-400 text-sm leading-relaxed font-light">Vercel 部署 404 修复专家</p>
+        </div>
+        
+        <div class="glass p-6 rounded-2xl group">
+            <div class="flex items-center gap-3 mb-3">
+                <div class="w-2 h-2 rounded-full" style="background-color: #ffd700"></div>
+                <h3 class="font-bold text-slate-200 group-hover:text-white transition-colors">systematic-debugging</h3>
+            </div>
+            <p class="text-slate-400 text-sm leading-relaxed font-light">4阶段根因调查法</p>
+        </div>
+        
+        </div>
+    </section>
+    
+    <section>
+        <div class="category-title flex items-center gap-2">
+            <span>🎨</span>
+            <span>Creative & Aesthetics</span>
+        </div>
+        <div class="bento-grid">
+            
+        <div class="glass p-6 rounded-2xl group">
+            <div class="flex items-center gap-3 mb-3">
+                <div class="w-2 h-2 rounded-full" style="background-color: #ff007f"></div>
+                <h3 class="font-bold text-slate-200 group-hover:text-white transition-colors">huashu-design</h3>
+            </div>
+            <p class="text-slate-400 text-sm leading-relaxed font-light">Cyber-Luxury 工业级设计体系</p>
+        </div>
+        
+        <div class="glass p-6 rounded-2xl group">
+            <div class="flex items-center gap-3 mb-3">
+                <div class="w-2 h-2 rounded-full" style="background-color: #ff007f"></div>
+                <h3 class="font-bold text-slate-200 group-hover:text-white transition-colors">manim-video</h3>
+            </div>
+            <p class="text-slate-400 text-sm leading-relaxed font-light">3Blue1Brown 风格数学/技术动画</p>
+        </div>
+        
+        <div class="glass p-6 rounded-2xl group">
+            <div class="flex items-center gap-3 mb-3">
+                <div class="w-2 h-2 rounded-full" style="background-color: #ff007f"></div>
+                <h3 class="font-bold text-slate-200 group-hover:text-white transition-colors">p5js</h3>
+            </div>
+            <p class="text-slate-400 text-sm leading-relaxed font-light">交互式生成艺术与视觉探索</p>
+        </div>
+        
+        <div class="glass p-6 rounded-2xl group">
+            <div class="flex items-center gap-3 mb-3">
+                <div class="w-2 h-2 rounded-full" style="background-color: #ff007f"></div>
+                <h3 class="font-bold text-slate-200 group-hover:text-white transition-colors">stable-diffusion-image-generation</h3>
+            </div>
+            <p class="text-slate-400 text-sm leading-relaxed font-light">顶尖 AI 图像生成流水线</p>
+        </div>
+        
+        <div class="glass p-6 rounded-2xl group">
+            <div class="flex items-center gap-3 mb-3">
+                <div class="w-2 h-2 rounded-full" style="background-color: #ff007f"></div>
+                <h3 class="font-bold text-slate-200 group-hover:text-white transition-colors">baoyu-infographic</h3>
+            </div>
+            <p class="text-slate-400 text-sm leading-relaxed font-light">专业级 21 种布局信息图生成</p>
+        </div>
+        
+        </div>
+    </section>
+    
+    <section>
+        <div class="category-title flex items-center gap-2">
+            <span>🔍</span>
+            <span>Deep Perception</span>
+        </div>
+        <div class="bento-grid">
+            
+        <div class="glass p-6 rounded-2xl group">
+            <div class="flex items-center gap-3 mb-3">
+                <div class="w-2 h-2 rounded-full" style="background-color: #00ff88"></div>
+                <h3 class="font-bold text-slate-200 group-hover:text-white transition-colors">tavily-search</h3>
+            </div>
+            <p class="text-slate-400 text-sm leading-relaxed font-light">AI 优化搜索，绕过 CAPTCHA 拦截</p>
+        </div>
+        
+        <div class="glass p-6 rounded-2xl group">
+            <div class="flex items-center gap-3 mb-3">
+                <div class="w-2 h-2 rounded-full" style="background-color: #00ff88"></div>
+                <h3 class="font-bold text-slate-200 group-hover:text-white transition-colors">hermes-perception-pipeline</h3>
+            </div>
+            <p class="text-slate-400 text-sm leading-relaxed font-light">搜索 -> 抓取 -> 清洗 -> 综合的感知链路</p>
+        </div>
+        
+        <div class="glass p-6 rounded-2xl group">
+            <div class="flex items-center gap-3 mb-3">
+                <div class="w-2 h-2 rounded-full" style="background-color: #00ff88"></div>
+                <h3 class="font-bold text-slate-200 group-hover:text-white transition-colors">paddle-ocr</h3>
+            </div>
+            <p class="text-slate-400 text-sm leading-relaxed font-light">高精度本地 OCR 文字识别</p>
+        </div>
+        
+        <div class="glass p-6 rounded-2xl group">
+            <div class="flex items-center gap-3 mb-3">
+                <div class="w-2 h-2 rounded-full" style="background-color: #00ff88"></div>
+                <h3 class="font-bold text-slate-200 group-hover:text-white transition-colors">web-markdown-reader</h3>
+            </div>
+            <p class="text-slate-400 text-sm leading-relaxed font-light">Jina Reader 纯净内容提取</p>
+        </div>
+        
+        </div>
+    </section>
+    
+    <section>
+        <div class="category-title flex items-center gap-2">
+            <span>💼</span>
+            <span>Productivity & Life</span>
+        </div>
+        <div class="bento-grid">
+            
+        <div class="glass p-6 rounded-2xl group">
+            <div class="flex items-center gap-3 mb-3">
+                <div class="w-2 h-2 rounded-full" style="background-color: #a855f7"></div>
+                <h3 class="font-bold text-slate-200 group-hover:text-white transition-colors">eju-companion</h3>
+            </div>
+            <p class="text-slate-400 text-sm leading-relaxed font-light">EJU 备考与关西大学申请陪伴</p>
+        </div>
+        
+        <div class="glass p-6 rounded-2xl group">
+            <div class="flex items-center gap-3 mb-3">
+                <div class="w-2 h-2 rounded-full" style="background-color: #a855f7"></div>
+                <h3 class="font-bold text-slate-200 group-hover:text-white transition-colors">ppt-master</h3>
+            </div>
+            <p class="text-slate-400 text-sm leading-relaxed font-light">AI 驱动的多格式 SVG PPT 生成系统</p>
+        </div>
+        
+        <div class="glass p-6 rounded-2xl group">
+            <div class="flex items-center gap-3 mb-3">
+                <div class="w-2 h-2 rounded-full" style="background-color: #a855f7"></div>
+                <h3 class="font-bold text-slate-200 group-hover:text-white transition-colors">google-workspace</h3>
+            </div>
+            <p class="text-slate-400 text-sm leading-relaxed font-light">全套 Google 生态自动化集成</p>
+        </div>
+        
+        <div class="glass p-6 rounded-2xl group">
+            <div class="flex items-center gap-3 mb-3">
+                <div class="w-2 h-2 rounded-full" style="background-color: #a855f7"></div>
+                <h3 class="font-bold text-slate-200 group-hover:text-white transition-colors">interactive-knowledge-gallery</h3>
+            </div>
+            <p class="text-slate-400 text-sm leading-relaxed font-light">将数据转化为交互式知识画廊</p>
+        </div>
+        
+        <div class="glass p-6 rounded-2xl group">
+            <div class="flex items-center gap-3 mb-3">
+                <div class="w-2 h-2 rounded-full" style="background-color: #a855f7"></div>
+                <h3 class="font-bold text-slate-200 group-hover:text-white transition-colors">weekly-email-value-summary</h3>
+            </div>
+            <p class="text-slate-400 text-sm leading-relaxed font-light">周报价值总结自动化</p>
+        </div>
+        
+        </div>
+    </section>
+    
+    </main>
+    <footer class="mt-24 text-center text-slate-500 text-sm font-light">
+        &copy; 2026 HERMES AGENT · POWERED BY HUASHU DESIGN
+    </footer>
+</body>
+</html>
